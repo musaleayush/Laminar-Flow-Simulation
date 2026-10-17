@@ -1,0 +1,901 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Laminar Flow Lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* Layout concept: full-bleed 3D wind-tunnel stage with a floating Reynolds gauge, and an instrument-style control rail (right on desktop, below on phones). */
+  :root {
+    --bg: #04071a;
+    --stage-hi: #0f1d5c;
+    --stage-lo: #02040e;
+    --panel: #080e2b;
+    --line: rgba(120, 160, 255, 0.18);
+    --ink: #e9f1ff;
+    --muted: #93a4cf;
+    --accent: #35e0ff;
+    --deep: #2a3dff;
+    --warn: #ffb454;
+    --hot: #ff6b5a;
+    --display: 'Bricolage Grotesque', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 14px/1.45 var(--display);
+    overflow: hidden;
+  }
+  button, input, select { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .app { height: 100%; display: flex; flex-direction: column; min-height: 0; }
+
+  .stage {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 260px;
+    min-width: 0;
+    overflow: hidden;
+    background: radial-gradient(120% 90% at 50% 38%, var(--stage-hi) 0%, var(--bg) 62%, var(--stage-lo) 100%);
+  }
+  canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+
+  .nogl {
+    position: absolute; inset: 0; display: grid; place-items: center;
+    padding: 16px; text-align: center; color: var(--muted);
+  }
+
+  /* Reynolds gauge */
+  .re-card {
+    position: absolute; top: 16px; left: 16px;
+    width: min(330px, calc(100% - 32px));
+    padding: 12px 14px 12px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: rgba(4, 8, 28, 0.66);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+  }
+  .re-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .eyebrow {
+    font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted);
+  }
+  .chip {
+    font-size: 12px; font-weight: 600; padding: 2px 10px; border-radius: 99px;
+    border: 1px solid currentColor; white-space: nowrap;
+  }
+  .chip[data-r="laminar"] { color: var(--accent); background: rgba(53, 224, 255, 0.1); }
+  .chip[data-r="transitional"] { color: var(--warn); background: rgba(255, 180, 84, 0.1); }
+  .chip[data-r="turbulent"] { color: var(--hot); background: rgba(255, 107, 90, 0.1); }
+  .re-num {
+    font-family: var(--mono); font-weight: 500; font-size: 34px; line-height: 1.15;
+    margin: 4px 0 8px; font-variant-numeric: tabular-nums;
+  }
+  .re-num small { font-size: 15px; color: var(--muted); margin-right: 6px; }
+  .gauge { position: relative; height: 8px; border-radius: 4px; margin: 0 0 4px;
+    background: linear-gradient(90deg, var(--deep) 0%, var(--deep) 50%, var(--warn) 55%, var(--hot) 60%, var(--hot) 100%);
+  }
+  .gauge-mark {
+    position: absolute; top: -4px; width: 4px; height: 16px; margin-left: -2px;
+    border-radius: 2px; background: #fff; box-shadow: 0 0 0 2px rgba(4, 8, 28, 0.8), 0 0 10px #fff;
+    transition: left 0.15s ease-out;
+  }
+  .ticks { position: relative; height: 16px; font-family: var(--mono); font-size: 10px; color: var(--muted); }
+  .ticks span { position: absolute; transform: translateX(-50%); }
+  .re-formula { margin: 6px 0 0; font-family: var(--mono); font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
+  .re-desc { margin: 6px 0 0; font-size: 13px; }
+  @media (max-width: 899px) {
+    .re-formula, .re-desc { display: none; }
+    .re-num { font-size: 26px; margin-bottom: 6px; }
+  }
+
+  .hint, .flowdir {
+    position: absolute; bottom: 12px; font-size: 12px; color: var(--muted); pointer-events: none;
+  }
+  .hint { left: 16px; transition: opacity 0.6s; }
+  .hint.gone { opacity: 0; }
+  .flowdir { right: 16px; display: flex; align-items: center; gap: 8px; letter-spacing: 0.12em; text-transform: uppercase; font-size: 11px; }
+  .flowdir svg { width: 34px; height: 12px; stroke: var(--accent); fill: none; stroke-width: 1.6; }
+
+  /* Control rail */
+  .panel {
+    flex: 0 0 auto; max-height: 46%; overflow-y: auto; overflow-x: hidden;
+    padding: 16px; background: var(--panel);
+    border-top: 1px solid var(--line);
+    display: flex; flex-direction: column; gap: 18px;
+  }
+  @media (min-width: 900px) {
+    .app { flex-direction: row; }
+    .panel { flex: 0 0 348px; max-height: none; border-top: 0; border-left: 1px solid var(--line); padding: 22px 20px; gap: 22px; }
+  }
+  .panel h1 { margin: 0 0 6px; font-size: 24px; font-weight: 700; letter-spacing: -0.01em; line-height: 1.1; text-wrap: balance; }
+  .panel header p { margin: 0; color: var(--muted); max-width: 46ch; }
+  .panel h2 {
+    margin: 0 0 10px; font-size: 11px; font-weight: 600; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  .group { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+
+  .shapes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .shape {
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    padding: 10px 4px 8px; cursor: pointer;
+    background: rgba(255, 255, 255, 0.03); border: 1px solid var(--line); border-radius: 10px;
+    color: var(--muted); transition: border-color 0.15s, background 0.15s, color 0.15s;
+  }
+  .shape svg { width: 30px; height: 30px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+  .shape span { font-size: 12px; }
+  .shape:hover { color: var(--ink); border-color: rgba(120, 160, 255, 0.4); }
+  .shape[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); background: rgba(53, 224, 255, 0.1); }
+
+  .seg { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .seg button {
+    padding: 7px 2px; cursor: pointer; font-size: 12px; color: var(--muted);
+    background: rgba(255, 255, 255, 0.03); border: 1px solid var(--line); border-radius: 8px;
+  }
+  .seg button:hover { color: var(--ink); }
+  .seg button[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); background: rgba(53, 224, 255, 0.1); }
+  .note { margin: 0; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+
+  .row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .row label { font-size: 13px; }
+  .row output { font-family: var(--mono); font-size: 12px; color: var(--accent); font-variant-numeric: tabular-nums; }
+  input[type="range"] { width: 100%; margin: 6px 0 0; accent-color: var(--accent); }
+
+  .check { display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 13px; }
+  .check input { width: 16px; height: 16px; accent-color: var(--accent); margin: 0; }
+  .btns { display: flex; gap: 8px; flex-wrap: wrap; }
+  .btn {
+    padding: 8px 14px; cursor: pointer; border-radius: 8px;
+    background: rgba(255, 255, 255, 0.05); border: 1px solid var(--line);
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: rgba(53, 224, 255, 0.12); }
+  .tag { position: absolute; left: 0; top: 0; display: none; padding: 3px 9px; font-size: 12px; font-weight: 600; border-radius: 99px; pointer-events: none; white-space: nowrap; background: rgba(4, 8, 28, 0.8); border: 1px solid currentColor; }
+  .zoom { position: absolute; right: 16px; bottom: 44px; display: flex; flex-direction: column; gap: 8px; }
+  .zoom button { width: 46px; height: 46px; font-size: 24px; line-height: 1; cursor: pointer; border-radius: 12px; border: 1px solid var(--line); background: rgba(4, 8, 28, 0.72); color: var(--ink); touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+  .zoom button:active { border-color: var(--accent); }
+  .fine { margin: 0; font-size: 12px; color: var(--muted); }
+</style>
+
+<div class="app">
+  <main class="stage" id="stage">
+    <canvas id="gl" aria-label="3D simulation of laminar flow around an object"></canvas>
+    <p class="nogl" id="nogl" hidden>This page needs WebGL to draw the 3D flow. Try another browser or turn on hardware acceleration.</p>
+
+    <section class="re-card" aria-label="Reynolds number">
+      <div class="re-top">
+        <span class="eyebrow">Reynolds number</span>
+        <span class="chip" id="chip" data-r="laminar" role="status">Laminar</span>
+      </div>
+      <div class="re-num"><small>Re</small><span id="reNum">360</span></div>
+      <div class="gauge"><div class="gauge-mark" id="mark"></div></div>
+      <div class="ticks" aria-hidden="true">
+        <span style="left:12.5%">1</span><span style="left:37.5%">100</span><span style="left:62.5%">10k</span><span style="left:87.5%">1M</span>
+      </div>
+      <p class="re-formula" id="formula"></p>
+      <p class="re-desc" id="desc"></p>
+    </section>
+
+    <div class="tag" id="tagStag" style="color:var(--hot)">Stagnation point</div>
+    <div class="tag" id="tagWake" style="color:var(--warn)">Wake zone (eddies)</div>
+    <div class="zoom"><button type="button" id="zin" aria-label="Zoom in">+</button><button type="button" id="zout" aria-label="Zoom out">−</button></div>
+    <div class="hint" id="hint">Drag to orbit. Scroll or pinch to zoom.</div>
+    <div class="flowdir" aria-hidden="true">Flow <svg viewBox="0 0 34 12"><path d="M1 6h30M26 1.5 32 6l-6 4.5"/></svg></div>
+  </main>
+
+  <aside class="panel" aria-label="Controls">
+    <header>
+      <h1>Laminar Flow Lab</h1>
+      <p>Fluid streams left to right past an object. Swap the object, resize it and change the fluid to see the streamlines bend.</p>
+    </header>
+
+    <section>
+      <h2>Object</h2>
+      <div class="shapes" role="group" aria-label="Object shape">
+        <button type="button" class="shape" data-shape="sphere" aria-pressed="true">
+          <svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="11"/><ellipse cx="16" cy="16" rx="11" ry="4" opacity=".55"/></svg><span>Sphere</span></button>
+        <button type="button" class="shape" data-shape="cylinder" aria-pressed="false">
+          <svg viewBox="0 0 32 32"><ellipse cx="16" cy="9" rx="9" ry="3.5"/><path d="M7 9v14c0 1.9 4 3.5 9 3.5s9-1.6 9-3.5V9"/></svg><span>Cylinder</span></button>
+        <button type="button" class="shape" data-shape="cube" aria-pressed="false">
+          <svg viewBox="0 0 32 32"><path d="M16 5l10 5.5v11L16 27 6 21.5v-11zM6 10.5 16 16l10-5.5M16 16v11"/></svg><span>Cube</span></button>
+        <button type="button" class="shape" data-shape="plate" aria-pressed="false">
+          <svg viewBox="0 0 32 32"><rect x="12.5" y="5" width="7" height="22" rx="1.2"/><path d="M19.5 9l4 -2v18l-4 2" opacity=".55"/></svg><span>Plate</span></button>
+        <button type="button" class="shape" data-shape="teardrop" aria-pressed="false">
+          <svg viewBox="0 0 32 32"><ellipse cx="16" cy="16" rx="12.5" ry="6"/><path d="M5 16h22" opacity=".45"/></svg><span>Streamlined</span></button>
+        <button type="button" class="shape" data-shape="blob" aria-pressed="false">
+          <svg viewBox="0 0 32 32"><path d="M7 18c-2-6 2-11 8-10 4-3 11 0 10 6 3 3 1 10-5 10-3 3-10 2-13-6z"/></svg><span>Irregular</span></button>
+        <button type="button" class="shape" data-shape="ring" aria-pressed="false">
+          <svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="11"/><circle cx="16" cy="16" r="5"/></svg><span>Ring</span></button>
+      </div>
+    </section>
+
+    <section class="group">
+      <div>
+        <div class="row"><label for="size">Size</label><output id="sizeOut" for="size">12 cm</output></div>
+        <input type="range" id="size" min="2" max="60" step="1" value="12">
+      </div>
+      <div>
+        <div class="row"><label for="tilt">Tilt</label><output id="tiltOut" for="tilt">0°</output></div>
+        <input type="range" id="tilt" min="-90" max="90" step="1" value="0">
+      </div>
+      <div>
+        <div class="row"><label for="turn">Turn</label><output id="turnOut" for="turn">0°</output></div>
+        <input type="range" id="turn" min="-90" max="90" step="1" value="0">
+      </div>
+    </section>
+
+    <section class="group">
+      <h2 style="margin:0">Fluid</h2>
+      <div class="seg" role="group" aria-label="Fluid">
+        <button type="button" data-fluid="air" aria-pressed="false">Air</button>
+        <button type="button" data-fluid="water" aria-pressed="false">Water</button>
+        <button type="button" data-fluid="oil" aria-pressed="true">Oil</button>
+        <button type="button" data-fluid="glycerin" aria-pressed="false">Glycerin</button>
+      </div>
+      <p class="note" id="nuNote"></p>
+      <div>
+        <div class="row"><label for="speed">Flow speed</label><output id="speedOut" for="speed">0.30 m/s</output></div>
+        <input type="range" id="speed" min="0" max="100" step="1" value="49">
+      </div>
+    </section>
+
+    <section class="group">
+      <h2 style="margin:0">View</h2>
+      <div>
+        <div class="row"><label for="lines">Streamlines</label><output id="linesOut" for="lines">4</output></div>
+        <input type="range" id="lines" min="1" max="5" step="1" value="4">
+      </div>
+      <label class="check"><input type="checkbox" id="orbit"> Auto-orbit</label>
+      <label class="check"><input type="checkbox" id="turbOn" checked> Let high Reynolds numbers turn turbulent</label>
+      <div class="btns">
+        <button type="button" class="btn" id="pause">Pause</button>
+        <button type="button" class="btn" id="resetView">Reset</button>
+        <button type="button" class="btn" id="stagBtn" aria-pressed="false">Stagnation point</button>
+        <button type="button" class="btn" id="wakeBtn" aria-pressed="false">Wake zone</button>
+        <button type="button" class="btn" id="contBtn" aria-pressed="false">Continuous lines</button>
+        <button type="button" class="btn" id="moveBtn" aria-pressed="false">Change position</button>
+      </div>
+      <p class="fine">Re = speed × size ÷ viscosity. Below about 1,000 the flow stays in smooth layers. Above about 6,000 it mixes and swirls behind the object.</p>
+    </section>
+  </aside>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>window.THREE||document.write('<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"><\/script>')</script>
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  var stage = $('stage'), canvas = $('gl');
+  if (typeof THREE === 'undefined') { $('nogl').hidden = false; return; }
+  var renderer;
+  try {
+    renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
+  } catch (err) { $('nogl').hidden = false; return; }
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setClearColor(0x000000, 0);
+  var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* ---------- constants ---------- */
+  var L = 6.5;      // half length of the tunnel (x)
+  var RT = 2.8;     // tunnel radius
+  var RS = 2.35;    // seeding radius at the inlet
+  var T = 44;       // points per trail
+  var P = 4;        // particles per streamline
+
+  var FLUIDS = {
+    air:      { nu: 1.5e-5, txt: '1.5×10⁻⁵' },
+    water:    { nu: 1.0e-6, txt: '1.0×10⁻⁶' },
+    oil:      { nu: 1.0e-4, txt: '1.0×10⁻⁴' },
+    glycerin: { nu: 1.1e-3, txt: '1.1×10⁻³' }
+  };
+  var SPACING = [0, 0.42, 0.36, 0.30, 0.26, 0.22];
+
+  var S = { shape: 'sphere', D: 12, tilt: 0, turn: 0, speed: 49, fluid: 'oil', turbOn: true, paused: false, level: window.innerWidth < 720 ? 3 : 4 };
+
+  /* ---------- scene ---------- */
+  var scene = new THREE.Scene();
+  var camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
+  scene.add(new THREE.AmbientLight(0x6a7cff, 0.55));
+  var key = new THREE.DirectionalLight(0xbdf1ff, 1.35); key.position.set(3, 5, 4); scene.add(key);
+  var rim = new THREE.DirectionalLight(0x3a4cff, 1.6); rim.position.set(-4, -2, -5); scene.add(rim);
+
+  // tunnel outline
+  var tunnel = new THREE.Group(); scene.add(tunnel);
+  var tMat = new THREE.LineBasicMaterial({ color: 0x4a68ff, transparent: true, opacity: 0.2 });
+  var tMatHi = new THREE.LineBasicMaterial({ color: 0x35e0ff, transparent: true, opacity: 0.45 });
+  [-L, -L / 2, 0, L / 2, L].forEach(function (x) {
+    var pts = [];
+    for (var i = 0; i <= 96; i++) { var a = i / 96 * Math.PI * 2; pts.push(new THREE.Vector3(x, Math.cos(a) * RT, Math.sin(a) * RT)); }
+    tunnel.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), x === -L ? tMatHi : tMat));
+  });
+  var lp = [];
+  for (var li = 0; li < 16; li++) {
+    var la = li / 16 * Math.PI * 2;
+    lp.push(new THREE.Vector3(-L, Math.cos(la) * RT, Math.sin(la) * RT), new THREE.Vector3(L, Math.cos(la) * RT, Math.sin(la) * RT));
+  }
+  tunnel.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(lp), tMat));
+
+  /* ---------- shapes: mesh + signed distance (local space, unit size) ---------- */
+  function boxSd(bx, by, bz) {
+    return function (x, y, z) {
+      var qx = Math.abs(x) - bx, qy = Math.abs(y) - by, qz = Math.abs(z) - bz;
+      var mx = qx > 0 ? qx : 0, my = qy > 0 ? qy : 0, mz = qz > 0 ? qz : 0;
+      var inner = Math.min(Math.max(qx, qy, qz), 0);
+      return Math.sqrt(mx * mx + my * my + mz * mz) + inner;
+    };
+  }
+  function blobR(x, y, z) {
+    return 0.95 + 0.22 * Math.sin(2.6 * x + 1) * Math.cos(1.9 * y) + 0.16 * Math.sin(3.3 * z + 2 * x) + 0.1 * Math.cos(4.1 * y + z);
+  }
+  var SHAPES = {
+    sphere: {
+      geo: function () { return new THREE.SphereGeometry(1, 72, 48); },
+      sd: function (x, y, z) { return Math.sqrt(x * x + y * y + z * z) - 1; }
+    },
+    cylinder: {
+      geo: function () { var g = new THREE.CylinderGeometry(0.9, 0.9, 2.6, 80, 1); g.rotateX(Math.PI / 2); return g; },
+      sd: function (x, y, z) {
+        var a = Math.sqrt(x * x + y * y) - 0.9, b = Math.abs(z) - 1.3;
+        var ma = a > 0 ? a : 0, mb = b > 0 ? b : 0;
+        return Math.min(Math.max(a, b), 0) + Math.sqrt(ma * ma + mb * mb);
+      }
+    },
+    cube: {
+      geo: function () { return new THREE.BoxGeometry(1.7, 1.7, 1.7); },
+      sd: boxSd(0.85, 0.85, 0.85)
+    },
+    plate: {
+      geo: function () { return new THREE.BoxGeometry(0.2, 2.4, 2.4); },
+      sd: boxSd(0.1, 1.2, 1.2)
+    },
+    teardrop: {
+      geo: function () { var g = new THREE.SphereGeometry(1, 72, 48); g.scale(1.8, 0.6, 0.6); return g; },
+      sd: function (x, y, z) {
+        var rx = 1.8, ry = 0.6, rz = 0.6;
+        var k0 = Math.sqrt((x / rx) * (x / rx) + (y / ry) * (y / ry) + (z / rz) * (z / rz));
+        var a = x / (rx * rx), b = y / (ry * ry), c = z / (rz * rz);
+        var k1 = Math.sqrt(a * a + b * b + c * c);
+        if (k1 < 1e-6) return -0.6;
+        return k0 * (k0 - 1) / k1;
+      }
+    },
+    ring: {
+      geo: function () { var g = new THREE.TorusGeometry(0.9, 0.35, 40, 100); g.rotateY(Math.PI / 2); return g; },
+      sd: function (x, y, z) {
+        var q = Math.sqrt(y * y + z * z) - 0.9;
+        return Math.sqrt(q * q + x * x) - 0.35;
+      }
+    },
+    blob: {
+      geo: function () {
+        var g = new THREE.SphereGeometry(1, 64, 44), p = g.attributes.position, v = new THREE.Vector3();
+        for (var i = 0; i < p.count; i++) { v.fromBufferAttribute(p, i).normalize(); v.multiplyScalar(blobR(v.x, v.y, v.z)); p.setXYZ(i, v.x, v.y, v.z); }
+        g.computeVertexNormals(); return g;
+      },
+      sd: function (x, y, z) { var r = Math.sqrt(x * x + y * y + z * z) || 1e-6; return (r - blobR(x / r, y / r, z / r)) * 0.7; }
+    }
+  };
+
+  var objGroup = new THREE.Group(); scene.add(objGroup);
+  var bodyMat = new THREE.MeshStandardMaterial({ color: 0x101a52, metalness: 0.55, roughness: 0.3, emissive: 0x060c30 });
+  var glowMat = new THREE.MeshBasicMaterial({ color: 0x35e0ff, transparent: true, opacity: 0.1, blending: THREE.AdditiveBlending, side: THREE.BackSide, depthWrite: false });
+  var edgeMat = new THREE.LineBasicMaterial({ color: 0x6fe8ff, transparent: true, opacity: 0.55 });
+  var body, glow, edges, curSD = SHAPES.sphere.sd, popT = 1;
+
+  function setShape(name) {
+    [body, glow, edges].forEach(function (o) { if (o) objGroup.remove(o); });
+    if (body) body.geometry.dispose();
+    if (edges) edges.geometry.dispose();
+    var geo = SHAPES[name].geo();
+    body = new THREE.Mesh(geo, bodyMat);
+    glow = new THREE.Mesh(geo, glowMat); glow.scale.setScalar(1.07);
+    edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo, 28), edgeMat);
+    objGroup.add(glow, body, edges);
+    curSD = SHAPES[name].sd;
+    popT = reduced ? 1 : 0;
+  }
+
+  /* ---------- flow field ---------- */
+  var sc = 0.8, invS = 1.25, delta = 0.66, UV = 1.14, push = 0.14, turbAmt = 0;
+  var r00 = 1, r01 = 0, r02 = 0, r10 = 0, r11 = 1, r12 = 0, r20 = 0, r21 = 0, r22 = 1;
+  var vx = 0, vy = 0, vz = 0, gnx = 1, gny = 0, gnz = 0, objX = 0, objY = 0, objZ = 0;
+
+  function sdf(x, y, z) {
+    x -= objX; y -= objY; z -= objZ;
+    var lx = (r00 * x + r10 * y + r20 * z) * invS;
+    var ly = (r01 * x + r11 * y + r21 * z) * invS;
+    var lz = (r02 * x + r12 * y + r22 * z) * invS;
+    return curSD(lx, ly, lz) * sc;
+  }
+  function gradN(x, y, z) {
+    var e = 0.02;
+    var gx = sdf(x + e, y, z) - sdf(x - e, y, z);
+    var gy = sdf(x, y + e, z) - sdf(x, y - e, z);
+    var gz = sdf(x, y, z + e) - sdf(x, y, z - e);
+    var gl = Math.sqrt(gx * gx + gy * gy + gz * gz) || 1;
+    gnx = gx / gl; gny = gy / gl; gnz = gz / gl;
+  }
+  // Steady laminar field: free stream, bent so it slides along the surface of the object.
+  function vel(x, y, z, t) {
+    var d = sdf(x, y, z);
+    var ux = UV, uy = 0, uz = 0;
+    if (d < delta * 6) {
+      gradN(x, y, z);
+      var f = d > 0 ? Math.exp(-d / delta) : 1;
+      var k = f * (push - UV * gnx);
+      ux = UV + k * gnx; uy = k * gny; uz = k * gnz;
+      var bst = 1 + 0.45 * f * (1 - gnx * gnx);
+      ux *= bst; uy *= bst; uz *= bst;
+    }
+    if (turbAmt > 0.005) {
+      var rx = x - objX - 0.5 * sc;
+      if (rx > 0) {
+        var lat2 = (y - objY) * (y - objY) + (z - objZ) * (z - objZ);
+        var w = 1.1 * sc * (1 + 0.14 * rx);
+        var mask = (1 - Math.exp(-rx / (1.2 * sc))) * Math.exp(-lat2 / (w * w));
+        var a = turbAmt * UV * 1.1 * mask;
+        ux += a * 0.5 * Math.sin(2.3 * y + 1.9 * t + 1.1 * z + 0.7 * x);
+        uy += a * (Math.sin(1.7 * z - 2.1 * t + 1.3 * x) + 0.6 * Math.sin(3.9 * x - 3.1 * t + 2.2 * z));
+        uz += a * (Math.sin(2.1 * x + 2.6 * t - 1.4 * y) + 0.6 * Math.sin(3.5 * y + 2.9 * t + x));
+      }
+    }
+    vx = ux; vy = uy; vz = uz;
+  }
+
+  /* ---------- speed palette ---------- */
+  var cr = 0, cg = 0, cb = 0;
+  function palette(r) {
+    var u = (r - 0.35) / 1.1; u = u < 0 ? 0 : (u > 1 ? 1 : u);
+    var m;
+    if (u < 0.5) {
+      m = u / 0.5;
+      cr = 0.16 + (0.12 - 0.16) * m; cg = 0.24 + (0.82 - 0.24) * m; cb = 1.0;
+    } else {
+      m = (u - 0.5) / 0.5;
+      cr = 0.12 + (0.92 - 0.12) * m; cg = 0.82 + (1.0 - 0.82) * m; cb = 1.0 + (0.96 - 1.0) * m;
+    }
+  }
+
+  /* ---------- particles ---------- */
+  var N = 0, seedY, seedZ, px, py, pz, age, posArr, colArr, headPos, headCol, lines, points, simT = 0;
+  var lineMat = new THREE.ShaderMaterial({
+    uniforms: { uGain: { value: 1.25 } },
+    vertexShader: 'attribute vec3 aColor; attribute float aT; varying vec3 vC; varying float vF; void main(){ vC = aColor; vF = aT; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: 'uniform float uGain; varying vec3 vC; varying float vF; void main(){ float f = pow(1.0 - vF, 1.7); gl_FragColor = vec4(vC * f * uGain, 1.0); }',
+    transparent: true, blending: THREE.AdditiveBlending, depthWrite: false
+  });
+  function makeSprite() {
+    var c = document.createElement('canvas'); c.width = c.height = 64;
+    var g = c.getContext('2d');
+    var gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.35, 'rgba(255,255,255,0.45)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+    return new THREE.CanvasTexture(c);
+  }
+  var pointMat = new THREE.PointsMaterial({ size: 0.12, map: makeSprite(), vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true });
+
+  function writeHead(i, x, y, z, collapse) {
+    var b = i * T * 3;
+    if (collapse) {
+      for (var k = 0; k < T; k++) {
+        var o = b + k * 3;
+        posArr[o] = x; posArr[o + 1] = y; posArr[o + 2] = z;
+        colArr[o] = cr; colArr[o + 1] = cg; colArr[o + 2] = cb;
+      }
+    } else {
+      posArr.copyWithin(b + 3, b, b + (T - 1) * 3);
+      colArr.copyWithin(b + 3, b, b + (T - 1) * 3);
+      posArr[b] = x; posArr[b + 1] = y; posArr[b + 2] = z;
+      colArr[b] = cr; colArr[b + 1] = cg; colArr[b + 2] = cb;
+    }
+    var h = i * 3;
+    headPos[h] = x; headPos[h + 1] = y; headPos[h + 2] = z;
+    headCol[h] = cr; headCol[h + 1] = cg; headCol[h + 2] = cb;
+  }
+
+  function stepAll(dt) {
+    var h = dt * 0.5;
+    for (var i = 0; i < N; i++) {
+      var x = px[i], y = py[i], z = pz[i];
+      vel(x, y, z, simT);
+      var k1x = vx, k1y = vy, k1z = vz;
+      vel(x + k1x * h, y + k1y * h, z + k1z * h, simT + h);
+      x += vx * dt; y += vy * dt; z += vz * dt;
+      var spd = Math.sqrt(vx * vx + vy * vy + vz * vz) / UV;
+
+      var d = sdf(x, y, z);
+      if (d < 0.03) {
+        gradN(x, y, z);
+        var m = 0.03 - d;
+        x += gnx * m; y += gny * m; z += gnz * m;
+      }
+      var lat = Math.sqrt(y * y + z * z);
+      if (lat > RT - 0.12) { var q = (RT - 0.12) / lat; y *= q; z *= q; }
+      age[i] += dt;
+
+      var respawn = x > L || age[i] > 60 || x !== x;
+      if (respawn) { x = -L; y = seedY[i]; z = seedZ[i]; age[i] = 0; spd = 1; }
+      px[i] = x; py[i] = y; pz[i] = z;
+      palette(spd);
+      writeHead(i, x, y, z, respawn);
+    }
+  }
+
+  function buildParticles(spacing) {
+    if (lines) { scene.remove(lines); lines.geometry.dispose(); scene.remove(points); points.geometry.dispose(); }
+    var seeds = [];
+    for (var k = 0; ; k++) {
+      var r = k * spacing; if (r > RS) break;
+      var n = k === 0 ? 1 : Math.max(6, Math.round(2 * Math.PI * r / spacing));
+      var off = Math.random() * 6.2832;
+      for (var j = 0; j < n; j++) { var a = off + j / n * 6.2832; seeds.push(r * Math.cos(a), r * Math.sin(a)); }
+    }
+    var ns = seeds.length / 2;
+    N = ns * P;
+    seedY = new Float32Array(N); seedZ = new Float32Array(N);
+    px = new Float32Array(N); py = new Float32Array(N); pz = new Float32Array(N); age = new Float32Array(N);
+    posArr = new Float32Array(N * T * 3); colArr = new Float32Array(N * T * 3);
+    headPos = new Float32Array(N * 3); headCol = new Float32Array(N * 3);
+    var aT = new Float32Array(N * T);
+    var idx = new Uint32Array(N * (T - 1) * 2);
+    var ii = 0;
+    for (var s = 0; s < ns; s++) {
+      for (var p = 0; p < P; p++) {
+        var i = s * P + p;
+        seedY[i] = seeds[s * 2]; seedZ[i] = seeds[s * 2 + 1];
+        px[i] = -L + Math.random() * 2 * L; py[i] = seedY[i]; pz[i] = seedZ[i]; age[i] = 0;
+        var base = i * T;
+        for (var t = 0; t < T; t++) {
+          aT[base + t] = t / (T - 1);
+          if (t < T - 1) { idx[ii++] = base + t; idx[ii++] = base + t + 1; }
+        }
+        // start every trail collapsed on its particle
+        palette(1);
+        writeHead(i, px[i], py[i], pz[i], true);
+      }
+    }
+    var g = new THREE.BufferGeometry();
+    var pa = new THREE.BufferAttribute(posArr, 3); pa.setUsage(THREE.DynamicDrawUsage);
+    var ca = new THREE.BufferAttribute(colArr, 3); ca.setUsage(THREE.DynamicDrawUsage);
+    g.setAttribute('position', pa); g.setAttribute('aColor', ca);
+    g.setAttribute('aT', new THREE.BufferAttribute(aT, 1));
+    g.setIndex(new THREE.BufferAttribute(idx, 1));
+    lines = new THREE.LineSegments(g, lineMat); lines.frustumCulled = false; scene.add(lines);
+
+    var g2 = new THREE.BufferGeometry();
+    var hp = new THREE.BufferAttribute(headPos, 3); hp.setUsage(THREE.DynamicDrawUsage);
+    var hc = new THREE.BufferAttribute(headCol, 3); hc.setUsage(THREE.DynamicDrawUsage);
+    g2.setAttribute('position', hp); g2.setAttribute('color', hc);
+    points = new THREE.Points(g2, pointMat); points.frustumCulled = false; scene.add(points);
+
+    lines.visible = points.visible = !S.cont; S.dirty = true;
+    for (var w = 0; w < T + 6; w++) stepAll(0.016); // pre-roll so trails are drawn from the first frame
+    uploadAll();
+  }
+  function uploadAll() {
+    lines.geometry.attributes.position.needsUpdate = true;
+    lines.geometry.attributes.aColor.needsUpdate = true;
+    points.geometry.attributes.position.needsUpdate = true;
+    points.geometry.attributes.color.needsUpdate = true;
+  }
+
+  /* ---------- readouts ---------- */
+  function fmtRe(r) {
+    if (r < 10) return r.toFixed(1);
+    if (r < 1000) return String(Math.round(r));
+    return Number(r.toPrecision(3)).toLocaleString('en-US');
+  }
+  function fmtU(u) { return u < 1 ? u.toFixed(2) : u.toFixed(1); }
+
+  function refresh() {
+    S.dirty = true;
+    var t = S.speed / 100;
+    var Uphys = Math.pow(10, -2 + 3 * t);
+    var Dm = S.D / 100;
+    var fl = FLUIDS[S.fluid];
+    var Re = Uphys * Dm / fl.nu;
+
+    sc = 0.3 + (S.D - 2) / 58;
+    invS = 1 / sc;
+    delta = 0.3 + 0.45 * sc;
+    UV = 0.7 + 0.9 * t;
+    push = 0.12 * UV;
+    var lg = Math.log(Re) / Math.LN10;
+    turbAmt = S.turbOn ? Math.min(1, Math.max(0, (lg - 3) / 0.78)) : 0;
+
+    objGroup.rotation.set(0, S.turn * Math.PI / 180, S.tilt * Math.PI / 180, 'ZYX');
+    var e = new THREE.Matrix4().makeRotationFromEuler(objGroup.rotation).elements;
+    r00 = e[0]; r01 = e[4]; r02 = e[8];
+    r10 = e[1]; r11 = e[5]; r12 = e[9];
+    r20 = e[2]; r21 = e[6]; r22 = e[10];
+
+    $('sizeOut').textContent = S.D + ' cm';
+    $('tiltOut').textContent = S.tilt + '°';
+    $('turnOut').textContent = S.turn + '°';
+    $('speedOut').textContent = fmtU(Uphys) + ' m/s';
+    $('nuNote').textContent = 'Kinematic viscosity ν = ' + fl.txt + ' m²/s';
+    $('reNum').textContent = fmtRe(Re);
+    $('formula').textContent = fmtU(Uphys) + ' m/s × ' + Dm.toFixed(2) + ' m ÷ ' + fl.txt + ' m²/s';
+
+    var regime = Re < 1000 ? 'laminar' : (Re < 6000 ? 'transitional' : 'turbulent');
+    var chip = $('chip');
+    chip.setAttribute('data-r', regime);
+    chip.textContent = regime.charAt(0).toUpperCase() + regime.slice(1);
+    var pos = Math.min(100, Math.max(0, (lg + 1) / 8 * 100));
+    $('mark').style.left = pos + '%';
+    var desc;
+    if (regime === 'laminar') desc = 'Smooth layers slide past the object without mixing. Each streamline keeps its own path.';
+    else if (regime === 'transitional') desc = S.turbOn ? 'On the edge. Real flow starts to wobble behind the object.' : 'On the edge. Turbulence is switched off, so the pattern stays smooth.';
+    else desc = S.turbOn ? 'Real flow swirls and mixes behind the object. Watch the wake.' : 'Real flow would be turbulent here. Turbulence is switched off, so you see the smooth idealised pattern.';
+    $('desc').textContent = desc;
+  }
+
+  /* ---------- camera ---------- */
+  var userMoved = false;
+  // Built-in orbit controls (no external script needed): drag = orbit, wheel/pinch = zoom, optional auto-orbit.
+  var controls = (function () {
+    var c = { target: new THREE.Vector3(), autoRotate: false, moveMode: false, mover: null }, gest = false, g0 = 12, th = 0.5, ph = 1.2, rad = 12, vth = 0, vph = 0, drag = false, pts = {}, pinch = 0;
+    c.sync = function () {
+      var d = camera.position.clone().sub(c.target);
+      rad = d.length() || 12; ph = Math.acos(Math.max(-1, Math.min(1, d.y / rad))); th = Math.atan2(d.x, d.z); vth = vph = 0;
+    };
+    function began() { userMoved = true; $('hint').classList.add('gone'); }
+    canvas.addEventListener('pointerdown', function (e) {
+      pts[e.pointerId] = { x: e.clientX, y: e.clientY }; try { canvas.setPointerCapture(e.pointerId); } catch (x) {}
+      drag = true; pinch = 0; vth = vph = 0; began();
+      if (c.moveMode && c.mover) c.mover(e, true);
+    });
+    canvas.addEventListener('pointermove', function (e) {
+      var p = pts[e.pointerId]; if (!p) return;
+      var ids = Object.keys(pts);
+      if (ids.length >= 2) {
+        p.x = e.clientX; p.y = e.clientY;
+        var a = pts[ids[0]], b = pts[ids[1]], dist = Math.hypot(a.x - b.x, a.y - b.y);
+        if (pinch && !gest) rad = Math.min(32, Math.max(5, rad * pinch / dist));
+        pinch = dist;
+      } else {
+        if (c.moveMode && c.mover) { c.mover(e, false); p.x = e.clientX; p.y = e.clientY; return; }
+        vth = -(e.clientX - p.x) * 0.006; vph = -(e.clientY - p.y) * 0.006;
+        th += vth; ph += vph; p.x = e.clientX; p.y = e.clientY;
+      }
+    });
+    function up(e) { delete pts[e.pointerId]; pinch = 0; if (!Object.keys(pts).length) drag = false; }
+    canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', up);
+    canvas.addEventListener('wheel', function (e) {
+      e.preventDefault(); rad = Math.min(32, Math.max(5, rad * Math.exp(Math.max(-80, Math.min(80, e.deltaY)) * 0.004))); began();
+    }, { passive: false });
+    // Safari trackpad / iOS pinch arrive as gesture events
+    canvas.addEventListener('gesturestart', function (e) { e.preventDefault(); gest = true; g0 = rad; began(); });
+    canvas.addEventListener('gesturechange', function (e) { e.preventDefault(); rad = Math.min(32, Math.max(5, g0 / (e.scale || 1))); });
+    canvas.addEventListener('gestureend', function (e) { e.preventDefault(); gest = false; });
+    c.zoom = function (f) { rad = Math.min(32, Math.max(5, rad * f)); began(); };
+    c.update = function () {
+      if (!drag) {
+        if (c.autoRotate) th += 0.0045;
+        else { th += vth; ph += vph; vth *= 0.92; vph *= 0.92; }
+      }
+      ph = Math.min(Math.PI - 0.05, Math.max(0.05, ph));
+      camera.position.set(c.target.x + rad * Math.sin(ph) * Math.sin(th), c.target.y + rad * Math.cos(ph), c.target.z + rad * Math.sin(ph) * Math.cos(th));
+      camera.lookAt(c.target);
+    };
+    return c;
+  })();
+  function defaultCam() {
+    var aspect = camera.aspect || 1.5;
+    var dist = Math.min(22, Math.max(10, 13 / aspect));
+    var dir = new THREE.Vector3(-0.42, 0.3, 0.85).normalize().multiplyScalar(dist);
+    camera.position.copy(dir);
+    camera.lookAt(0, 0, 0);
+    controls.target.set(0, 0, 0); controls.sync(); controls.update();
+  }
+  function resize() {
+    var w = Math.max(1, stage.clientWidth), h = Math.max(1, stage.clientHeight);
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h; camera.updateProjectionMatrix();
+    if (!userMoved) defaultCam();
+  }
+  if (window.ResizeObserver) new ResizeObserver(resize).observe(stage);
+  window.addEventListener('resize', resize);
+
+  /* ---------- controls wiring ---------- */
+  function bindRange(id, key, cb) {
+    $(id).addEventListener('input', function (ev) { S[key] = Number(ev.target.value); refresh(); if (cb) cb(); });
+  }
+  bindRange('size', 'D'); bindRange('tilt', 'tilt'); bindRange('turn', 'turn'); bindRange('speed', 'speed');
+  var linesTimer = 0;
+  $('lines').addEventListener('input', function (ev) {
+    S.level = Number(ev.target.value);
+    $('linesOut').textContent = S.level;
+    clearTimeout(linesTimer);
+    linesTimer = setTimeout(function () { buildParticles(SPACING[S.level]); }, 120);
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('.shape'), function (btn) {
+    btn.addEventListener('click', function () {
+      S.shape = btn.getAttribute('data-shape');
+      Array.prototype.forEach.call(document.querySelectorAll('.shape'), function (b) { b.setAttribute('aria-pressed', String(b === btn)); });
+      setShape(S.shape); refresh();
+    });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('[data-fluid]'), function (btn) {
+    btn.addEventListener('click', function () {
+      S.fluid = btn.getAttribute('data-fluid');
+      Array.prototype.forEach.call(document.querySelectorAll('[data-fluid]'), function (b) { b.setAttribute('aria-pressed', String(b === btn)); });
+      refresh();
+    });
+  });
+  $('orbit').addEventListener('change', function (ev) { if (controls) controls.autoRotate = ev.target.checked; });
+  $('turbOn').addEventListener('change', function (ev) { S.turbOn = ev.target.checked; refresh(); });
+  $('pause').addEventListener('click', function () { S.paused = !S.paused; $('pause').textContent = S.paused ? 'Play' : 'Pause'; });
+  $('resetView').addEventListener('click', function () {
+    // Reset camera to its starting view
+    userMoved = false; defaultCam();
+    // Reset object to its starting position (centre of the channel)
+    objX = objY = objZ = 0; objGroup.position.set(0, 0, 0); S.dirty = true;
+  });
+  $('lines').value = S.level; $('linesOut').textContent = S.level;
+
+  /* ---------- continuous dye streamlines (like the Hele-Shaw photo) ---------- */
+  S.cont = false; S.dirty = false;
+  var contMat = new THREE.ShaderMaterial({
+    uniforms: { uT: { value: 0 } },
+    vertexShader: 'attribute float aD; varying float vD; void main(){ vD = aD; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: 'uniform float uT; varying float vD; void main(){ float w = 0.5 + 0.5 * sin((vD - uT) * 5.0); w = w * w; gl_FragColor = vec4(mix(vec3(0.16, 0.5, 1.0), vec3(0.75, 0.97, 1.0), w), 0.95); }',
+    transparent: true
+  }), contLines = null;
+  function buildCont() {
+    S.dirty = false;
+    if (contLines) { scene.remove(contLines); contLines.geometry.dispose(); contLines = null; }
+    var ns = Math.floor(N / P), dt = 0.04, verts = [], dist = [], acc = 0, saveTurb = turbAmt, s, i;
+    turbAmt = 0; // dye lines follow the steady, smooth flow
+    for (s = 0; s < ns; s++) {
+      var x = -L, y = seedY[s * P], z = seedZ[s * P], ox = x, oy = y, oz = z, h = dt * 0.5; acc = 0;
+      for (i = 0; i < 700; i++) {
+        if (i > 0) { verts.push(ox, oy, oz, x, y, z); var sg = Math.sqrt((x - ox) * (x - ox) + (y - oy) * (y - oy) + (z - oz) * (z - oz)); dist.push(acc, acc + sg); acc += sg; }
+        ox = x; oy = y; oz = z;
+        vel(x, y, z, 0);
+        vel(x + vx * h, y + vy * h, z + vz * h, 0);
+        x += vx * dt; y += vy * dt; z += vz * dt;
+        var d = sdf(x, y, z);
+        if (d < 0.03) { gradN(x, y, z); var m = 0.03 - d; x += gnx * m; y += gny * m; z += gnz * m; }
+        var lat = Math.sqrt(y * y + z * z);
+        if (lat > RT - 0.12) { var q = (RT - 0.12) / lat; y *= q; z *= q; }
+        if (x > L) { verts.push(ox, oy, oz, L, y, z); dist.push(acc, acc + 0.04); break; }
+      }
+    }
+    turbAmt = saveTurb;
+    var g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+    g.setAttribute('aD', new THREE.Float32BufferAttribute(dist, 1));
+    contLines = new THREE.LineSegments(g, contMat); contLines.frustumCulled = false; contLines.visible = S.cont;
+    scene.add(contLines);
+  }
+  $('contBtn').addEventListener('click', function () {
+    S.cont = !S.cont; this.setAttribute('aria-pressed', String(S.cont));
+    lines.visible = points.visible = !S.cont;
+    if (contLines) contLines.visible = S.cont;
+    if (S.cont) S.dirty = true;
+  });
+
+  // zoom buttons
+  $('zin').addEventListener('click', function () { controls.zoom(0.8); });
+  $('zout').addEventListener('click', function () { controls.zoom(1.25); });
+
+  // Change position: drag the object anywhere inside the channel
+  var rc = new THREE.Raycaster(), pl = new THREE.Plane(), hit = new THREE.Vector3(), grab = new THREE.Vector3(), cd = new THREE.Vector3(), nd = new THREE.Vector2();
+  function pointerHit(e) {
+    var r = canvas.getBoundingClientRect();
+    nd.set((e.clientX - r.left) / r.width * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    rc.setFromCamera(nd, camera);
+    camera.getWorldDirection(cd);
+    pl.setFromNormalAndCoplanarPoint(cd, objGroup.position);
+    return rc.ray.intersectPlane(pl, hit);
+  }
+  controls.mover = function (e, first) {
+    if (!pointerHit(e)) return;
+    if (first) { grab.copy(objGroup.position).sub(hit); return; }
+    var nx = hit.x + grab.x, ny = hit.y + grab.y, nz = hit.z + grab.z;
+    var ex = 1.8 * sc + 0.3, rr = Math.max(0, RT - 1.2 * sc - 0.1);
+    nx = Math.max(-L + ex, Math.min(L - ex, nx));
+    var rho = Math.sqrt(ny * ny + nz * nz);
+    if (rho > rr) { ny *= rr / rho; nz *= rr / rho; }
+    objX = nx; objY = ny; objZ = nz; objGroup.position.set(nx, ny, nz); S.dirty = true;
+  };
+  $('moveBtn').addEventListener('click', function () {
+    controls.moveMode = !controls.moveMode; this.setAttribute('aria-pressed', String(controls.moveMode));
+    canvas.style.cursor = controls.moveMode ? 'move' : '';
+    var h = $('hint'); h.classList.remove('gone');
+    h.textContent = controls.moveMode ? 'Drag anywhere to move the object through the channel.' : 'Drag to orbit. Scroll or pinch to zoom.';
+  });
+
+  /* ---------- stagnation point + wake zone overlays ---------- */
+  var wakeMesh = new THREE.Mesh(new THREE.SphereGeometry(1, 40, 28), new THREE.MeshBasicMaterial({ color: 0xff6b5a, transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending, depthWrite: false }));
+  var wakeWire = new THREE.Mesh(wakeMesh.geometry, new THREE.MeshBasicMaterial({ color: 0xffb454, wireframe: true, transparent: true, opacity: 0.35, depthWrite: false }));
+  var stagDot = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), new THREE.MeshBasicMaterial({ color: 0xff6b5a }));
+  var stagHalo = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), new THREE.MeshBasicMaterial({ color: 0xff6b5a, transparent: true, opacity: 0.25, blending: THREE.AdditiveBlending, depthWrite: false }));
+  [wakeMesh, wakeWire, stagDot, stagHalo].forEach(function (m) { m.visible = false; scene.add(m); });
+  S.wake = false; S.stag = false;
+  var tagW = $('tagWake'), tagS = $('tagStag'), v3 = new THREE.Vector3(), bbox = new THREE.Box3(), stagP = new THREE.Vector3(), wakeEnd = new THREE.Vector3();
+  function place(tag, p, fx, dy) {
+    v3.copy(p).project(camera);
+    tag.style.display = v3.z > 1 ? 'none' : 'block';
+    tag.style.transform = 'translate(' + ((v3.x + 1) / 2 * stage.clientWidth + fx * tag.offsetWidth) + 'px,' + ((1 - v3.y) / 2 * stage.clientHeight + dy) + 'px)';
+  }
+  // Stagnation point = most upstream point of the surface (the flow hits it head-on and stops).
+  function findStag() {
+    var best = 1e9, by = 0, bz = 0, bx = 0, x, y, z;
+    function score(px_, py_, pz_) { return px_ + 0.01 * (py_ * py_ + pz_ * pz_); }
+    for (y = -2.2; y <= 2.2; y += 0.2) for (z = -2.2; z <= 2.2; z += 0.2) {
+      for (x = -L; x < L; x += 0.1) if (sdf(x, y, z) < 0) { if (score(x, y, z) < best) { best = score(x, y, z); bx = x; by = y; bz = z; } break; }
+    }
+    if (best > 1e8) return false;
+    var y0 = by, z0 = bz, x0 = bx; best = 1e9;
+    for (y = y0 - 0.2; y <= y0 + 0.2; y += 0.04) for (z = z0 - 0.2; z <= z0 + 0.2; z += 0.04) {
+      for (x = x0 - 0.2; x < x0 + 0.3; x += 0.02) if (sdf(x, y, z) < 0) { if (score(x, y, z) < best) { best = score(x, y, z); bx = x; by = y; bz = z; } break; }
+    }
+    stagP.set(bx, by, bz); return true;
+  }
+  function updateOverlays() {
+    camera.updateMatrixWorld();
+    if (S.stag) {
+      if (findStag()) {
+        var pulse = 1 + 0.25 * Math.sin(performance.now() / 220);
+        stagDot.position.copy(stagP); stagDot.scale.setScalar(0.09 + 0.05 * sc);
+        stagHalo.position.copy(stagP); stagHalo.scale.setScalar((0.2 + 0.1 * sc) * pulse);
+        place(tagS, stagP, -1.15, -30);
+      } else tagS.style.display = 'none';
+    }
+    if (S.wake) {
+      bbox.setFromObject(body);
+      var h = Math.max(bbox.max.y - bbox.min.y, bbox.max.z - bbox.min.z) / 2 + 0.1;
+      var len = Math.max(0.8, Math.min(L - bbox.max.x - 0.2, 2.6 * h + 1));
+      var cy = (bbox.max.y + bbox.min.y) / 2, cz = (bbox.max.z + bbox.min.z) / 2;
+      wakeMesh.position.set(bbox.max.x + len * 0.5 - 0.15, cy, cz);
+      wakeMesh.scale.set(len * 0.5, h * 0.85, h * 0.85);
+      wakeWire.position.copy(wakeMesh.position); wakeWire.scale.copy(wakeMesh.scale);
+      wakeEnd.set(bbox.max.x + len * 0.5, cy + h * 0.85, cz);
+      place(tagW, wakeEnd, -0.5, -34);
+    }
+  }
+  function setOverlay(key, btn) {
+    S[key] = !S[key]; btn.setAttribute('aria-pressed', String(S[key]));
+    S.paused = S.wake || S.stag;
+    $('pause').textContent = S.paused ? 'Play' : 'Pause';
+    wakeMesh.visible = wakeWire.visible = S.wake; stagDot.visible = stagHalo.visible = S.stag;
+    if (!S.wake) tagW.style.display = 'none';
+    if (!S.stag) tagS.style.display = 'none';
+  }
+  $('stagBtn').addEventListener('click', function () { setOverlay('stag', this); });
+  $('wakeBtn').addEventListener('click', function () { setOverlay('wake', this); });
+
+  /* ---------- run ---------- */
+  setShape(S.shape);
+  refresh();
+  resize();
+  buildParticles(SPACING[S.level]);
+
+  var clock = new THREE.Clock();
+  function frame() {
+    requestAnimationFrame(frame);
+    var dt = Math.min(clock.getDelta(), 0.04);
+    if (S.cont && S.dirty) buildCont();
+    if (S.cont && !S.paused) contMat.uniforms.uT.value += dt * UV;
+    if (!S.paused && !S.cont) { simT += dt; stepAll(dt); uploadAll(); }
+    if (popT < 1) popT = Math.min(1, popT + dt / 0.35);
+    var ease = 1 - Math.pow(1 - popT, 3);
+    objGroup.scale.setScalar(sc * (0.8 + 0.2 * ease));
+    controls.update();
+    if (S.wake || S.stag) updateOverlays();
+    renderer.render(scene, camera);
+  }
+  frame();
+})();
+</script>
+
+</body></html>
