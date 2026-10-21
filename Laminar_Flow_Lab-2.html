@@ -1,8 +1,5 @@
 <!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
 <title>Laminar Flow Lab</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
   /* Layout concept: full-bleed 3D wind-tunnel stage with a floating Reynolds gauge, and an instrument-style control rail (right on desktop, below on phones). */
   :root {
@@ -17,8 +14,8 @@
     --deep: #2a3dff;
     --warn: #ffb454;
     --hot: #ff6b5a;
-    --display: 'Bricolage Grotesque', system-ui, -apple-system, 'Segoe UI', sans-serif;
-    --mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    --display: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --mono: 'SFMono-Regular', 'Consolas', 'Liberation Mono', 'Menlo', monospace;
     color-scheme: dark;
   }
   * { box-sizing: border-box; }
@@ -156,6 +153,8 @@
   }
   .btn:hover { border-color: var(--accent); }
   .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: rgba(53, 224, 255, 0.12); }
+  .model-note { padding: 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); font-size: 12px; }
+  .model-note strong { color: var(--ink); }
   .tag { position: absolute; left: 0; top: 0; display: none; padding: 3px 9px; font-size: 12px; font-weight: 600; border-radius: 99px; pointer-events: none; white-space: nowrap; background: rgba(4, 8, 28, 0.8); border: 1px solid currentColor; }
   .zoom { position: absolute; right: 16px; bottom: 44px; display: flex; flex-direction: column; gap: 8px; }
   .zoom button { width: 46px; height: 46px; font-size: 24px; line-height: 1; cursor: pointer; border-radius: 12px; border: 1px solid var(--line); background: rgba(4, 8, 28, 0.72); color: var(--ink); touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
@@ -182,8 +181,9 @@
       <p class="re-desc" id="desc"></p>
     </section>
 
-    <div class="tag" id="tagStag" style="color:var(--hot)">Stagnation point</div>
-    <div class="tag" id="tagWake" style="color:var(--warn)">Wake zone (eddies)</div>
+    <div class="tag" id="tagStag" style="color:var(--hot)">Analytical stagnation point</div>
+    <div class="tag" id="tagWake" style="color:var(--warn)">Estimated wake region</div>
+    <div class="tag" id="tagSep" style="color:var(--hot)">Estimated separation (120°)</div>
     <div class="zoom"><button type="button" id="zin" aria-label="Zoom in">+</button><button type="button" id="zout" aria-label="Zoom out">−</button></div>
     <div class="hint" id="hint">Drag to orbit. Scroll or pinch to zoom.</div>
     <div class="flowdir" aria-hidden="true">Flow <svg viewBox="0 0 34 12"><path d="M1 6h30M26 1.5 32 6l-6 4.5"/></svg></div>
@@ -252,22 +252,40 @@
         <input type="range" id="lines" min="1" max="5" step="1" value="4">
       </div>
       <label class="check"><input type="checkbox" id="orbit"> Auto-orbit</label>
-      <label class="check"><input type="checkbox" id="turbOn" checked> Let high Reynolds numbers turn turbulent</label>
+      <label class="check"><input type="checkbox" id="turbOn" checked> Show estimated cylinder vortex shedding</label>
       <div class="btns">
         <button type="button" class="btn" id="pause">Pause</button>
         <button type="button" class="btn" id="resetView">Reset</button>
         <button type="button" class="btn" id="stagBtn" aria-pressed="false">Stagnation point</button>
         <button type="button" class="btn" id="wakeBtn" aria-pressed="false">Wake zone</button>
+        <button type="button" class="btn" id="blBtn" aria-pressed="false">Boundary-layer estimate</button>
+        <button type="button" class="btn" id="sepBtn" aria-pressed="false">Separation estimate</button>
         <button type="button" class="btn" id="contBtn" aria-pressed="false">Continuous lines</button>
         <button type="button" class="btn" id="moveBtn" aria-pressed="false">Change position</button>
       </div>
-      <p class="fine">Re = speed × size ÷ viscosity. Below about 1,000 the flow stays in smooth layers. Above about 6,000 it mixes and swirls behind the object.</p>
+      <p class="fine" id="overlayHelp" role="status"></p>
+      <div class="model-note" id="modelNote" role="status"></div>
+      <p class="fine">Legend: cyan halo = estimated boundary-layer envelope; amber markers = empirical separation; coral surface = wake estimate (cylinder: 10% deficit contour; other shapes: illustrative geometry-scaled envelope); red marker = analytical stagnation point.</p>
+      <p class="fine">Cylinder regime guide: creeping flow below Re ≈ 5; a steady separated wake can occur above it; periodic shedding begins near Re ≈ 47. These thresholds do not apply to the other shapes.</p>
     </section>
   </aside>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script>window.THREE||document.write('<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"><\/script>')</script>
+<script src="./three.min.js"></script>
+<script>
+  if (typeof window.THREE === 'undefined') {
+    var fallbackScript = document.createElement('script');
+    fallbackScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
+    fallbackScript.onerror = function () {
+      var note = document.getElementById('nogl');
+      if (note) {
+        note.hidden = false;
+        note.textContent = 'Three.js could not be loaded. Please keep the local three.min.js file in the project root or connect to the internet.';
+      }
+    };
+    document.head.appendChild(fallbackScript);
+  }
+</script>
 <script>
 (function () {
   'use strict';
@@ -297,7 +315,7 @@
   };
   var SPACING = [0, 0.42, 0.36, 0.30, 0.26, 0.22];
 
-  var S = { shape: 'sphere', D: 12, tilt: 0, turn: 0, speed: 49, fluid: 'oil', turbOn: true, paused: false, level: window.innerWidth < 720 ? 3 : 4 };
+  var S = { shape: 'sphere', D: 12, tilt: 0, turn: 0, speed: 49, fluid: 'oil', turbOn: true, boundaryLayer: false, separation: false, paused: false, level: window.innerWidth < 720 ? 3 : 4 };
 
   /* ---------- scene ---------- */
   var scene = new THREE.Scene();
@@ -396,14 +414,40 @@
     var geo = SHAPES[name].geo();
     body = new THREE.Mesh(geo, bodyMat);
     glow = new THREE.Mesh(geo, glowMat); glow.scale.setScalar(1.07);
+    glow.visible = S.boundaryLayer;
     edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo, 28), edgeMat);
     objGroup.add(glow, body, edges);
     curSD = SHAPES[name].sd;
     popT = reduced ? 1 : 0;
   }
 
-  /* ---------- flow field ---------- */
-  var sc = 0.8, invS = 1.25, delta = 0.66, UV = 1.14, push = 0.14, turbAmt = 0;
+  /* ---------- reduced-order flow models ---------- */
+  var sc = 0.8, invS = 1.25, UV = 1.14, currentRe = 0, Uphys = 0, charLengthM = 0;
+  var isCylinderAligned = true, shedFrequency = 0, separationTheta = null, blDeltaNorm = 0;
+  var wakeIsCylinderModel = false;
+  var BL_H = 0.02, BL_MAX = 8, BL_PROFILE = new Float32Array(BL_MAX / BL_H + 1);
+  (function buildBlasiusProfile() {
+    var state = [0, 0, 0.332057336215];
+    function slope(y) { return [y[1], y[2], -0.5 * y[0] * y[2]]; }
+    function offset(y, k, amount) { return [y[0] + amount * k[0], y[1] + amount * k[1], y[2] + amount * k[2]]; }
+    for (var i = 0; i < BL_PROFILE.length; i++) {
+      BL_PROFILE[i] = state[1];
+      var k1 = slope(state);
+      var k2 = slope(offset(state, k1, BL_H / 2));
+      var k3 = slope(offset(state, k2, BL_H / 2));
+      var k4 = slope(offset(state, k3, BL_H));
+      state = [
+        state[0] + BL_H * (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0]) / 6,
+        state[1] + BL_H * (k1[1] + 2 * k2[1] + 2 * k3[1] + k4[1]) / 6,
+        state[2] + BL_H * (k1[2] + 2 * k2[2] + 2 * k3[2] + k4[2]) / 6
+      ];
+    }
+  })();
+  function blasiusVelocity(eta) {
+    var q = Math.max(0, Math.min(BL_PROFILE.length - 1, eta / BL_H));
+    var i = Math.floor(q), f = q - i;
+    return BL_PROFILE[i] + (BL_PROFILE[Math.min(i + 1, BL_PROFILE.length - 1)] - BL_PROFILE[i]) * f;
+  }
   var r00 = 1, r01 = 0, r02 = 0, r10 = 0, r11 = 1, r12 = 0, r20 = 0, r21 = 0, r22 = 1;
   var vx = 0, vy = 0, vz = 0, gnx = 1, gny = 0, gnz = 0, objX = 0, objY = 0, objZ = 0;
 
@@ -422,31 +466,109 @@
     var gl = Math.sqrt(gx * gx + gy * gy + gz * gz) || 1;
     gnx = gx / gl; gny = gy / gl; gnz = gz / gl;
   }
-  // Steady laminar field: free stream, bent so it slides along the surface of the object.
-  function vel(x, y, z, t) {
+  function transformVelocityToWorld(x, y, z, t) {
     var d = sdf(x, y, z);
-    var ux = UV, uy = 0, uz = 0;
-    if (d < delta * 6) {
-      gradN(x, y, z);
-      var f = d > 0 ? Math.exp(-d / delta) : 1;
-      var k = f * (push - UV * gnx);
-      ux = UV + k * gnx; uy = k * gny; uz = k * gnz;
-      var bst = 1 + 0.45 * f * (1 - gnx * gnx);
-      ux *= bst; uy *= bst; uz *= bst;
-    }
-    if (turbAmt > 0.005) {
-      var rx = x - objX - 0.5 * sc;
-      if (rx > 0) {
-        var lat2 = (y - objY) * (y - objY) + (z - objZ) * (z - objZ);
-        var w = 1.1 * sc * (1 + 0.14 * rx);
-        var mask = (1 - Math.exp(-rx / (1.2 * sc))) * Math.exp(-lat2 / (w * w));
-        var a = turbAmt * UV * 1.1 * mask;
-        ux += a * 0.5 * Math.sin(2.3 * y + 1.9 * t + 1.1 * z + 0.7 * x);
-        uy += a * (Math.sin(1.7 * z - 2.1 * t + 1.3 * x) + 0.6 * Math.sin(3.9 * x - 3.1 * t + 2.2 * z));
-        uz += a * (Math.sin(2.1 * x + 2.6 * t - 1.4 * y) + 0.6 * Math.sin(3.5 * y + 2.9 * t + x));
+    var lx = (r00 * (x - objX) + r10 * (y - objY) + r20 * (z - objZ)) * invS;
+    var ly = (r01 * (x - objX) + r11 * (y - objY) + r21 * (z - objZ)) * invS;
+    var lz = (r02 * (x - objX) + r12 * (y - objY) + r22 * (z - objZ)) * invS;
+    var u0 = r00 * UV, u1 = r10 * UV, u2 = r20 * UV;
+    var ux = u0, uy = u1, uz = u2;
+    var radius, r, dot, invr2, invr3, invr4, factor;
+
+    if (S.shape === 'sphere') {
+      radius = Math.sqrt(lx * lx + ly * ly + lz * lz);
+      if (radius < 1.001) {
+        var scale = 1.001 / (radius || 1);
+        lx *= scale; ly *= scale; lz *= scale; radius = 1.001;
+      }
+      invr2 = 1 / (radius * radius);
+      invr3 = invr2 / radius;
+      invr4 = invr2 * invr2;
+      dot = u0 * lx + u1 * ly + u2 * lz;
+      var invr5 = invr4 / radius;
+      ux = u0 * (1 + 0.5 * invr3) - 1.5 * dot * lx * invr5;
+      uy = u1 * (1 + 0.5 * invr3) - 1.5 * dot * ly * invr5;
+      uz = u2 * (1 + 0.5 * invr3) - 1.5 * dot * lz * invr5;
+    } else if (S.shape === 'cylinder') {
+      radius = 0.9;
+      r = Math.sqrt(lx * lx + ly * ly);
+      if (r < radius + 0.001) {
+        var radialScale = (radius + 0.001) / (r || 1);
+        lx *= radialScale; ly *= radialScale; r = radius + 0.001;
+      }
+      invr2 = 1 / (r * r);
+      invr4 = invr2 * invr2;
+      dot = u0 * lx + u1 * ly;
+      factor = radius * radius;
+      ux = u0 * (1 + factor * invr2) - 2 * factor * dot * lx * invr4;
+      uy = u1 * (1 + factor * invr2) - 2 * factor * dot * ly * invr4;
+      uz = u2;
+    } else {
+      // Explicitly visual-only SDF deflection for shapes without a validated model here.
+      ux = u0; uy = u1; uz = u2;
+      if (d < 1.8 * sc) {
+        gradN(x, y, z);
+        var normalSpeed = ux * gnx + uy * gny + uz * gnz;
+        factor = Math.exp(-Math.max(0, d) / Math.max(0.06, 0.25 * sc));
+        ux -= normalSpeed * factor * gnx;
+        uy -= normalSpeed * factor * gny;
+        uz -= normalSpeed * factor * gnz;
+        factor = 1 - Math.exp(-3 * Math.pow(Math.max(0, d) / Math.max(0.04, 0.12 * sc), 2));
+        ux *= factor; uy *= factor; uz *= factor;
       }
     }
-    vx = ux; vy = uy; vz = uz;
+
+    if (S.shape === 'sphere' || (S.shape === 'cylinder' && isCylinderAligned)) {
+      var wall = Math.max(0, d / sc);
+      if (d <= 0) {
+        ux = uy = uz = 0;
+      } else {
+        var normalX, normalY, normalZ, flowDot, theta, surfaceSpeed, surfaceDistance, deltaNorm;
+        if (S.shape === 'sphere') {
+          var rr = Math.sqrt(lx * lx + ly * ly + lz * lz) || 1;
+          normalX = lx / rr; normalY = ly / rr; normalZ = lz / rr;
+          flowDot = (normalX * u0 + normalY * u1 + normalZ * u2) / (UV || 1);
+          theta = Math.acos(Math.max(-1, Math.min(1, -flowDot)));
+          surfaceSpeed = 1.5 * UV * Math.sin(theta);
+          surfaceDistance = theta * sc;
+        } else {
+          var rr2 = Math.sqrt(lx * lx + ly * ly) || 1;
+          normalX = lx / rr2; normalY = ly / rr2;
+          flowDot = (normalX * u0 + normalY * u1) / (UV || 1);
+          theta = Math.acos(Math.max(-1, Math.min(1, -flowDot)));
+          surfaceSpeed = 2 * UV * Math.sin(theta);
+          surfaceDistance = theta * 0.9 * sc;
+        }
+        var ueMps = surfaceSpeed / (UV || 1) * Uphys;
+        var sMeters = surfaceDistance * (S.D / 100) / Math.max(sc * 2, 1e-9);
+        var delta99M = 5 * Math.sqrt(FLUIDS[S.fluid].nu * sMeters / Math.max(ueMps, 1e-8));
+        deltaNorm = Math.min(0.3, delta99M * 2 / Math.max(S.D / 100, 1e-9));
+        var profile = Uphys > 0 ? blasiusVelocity(4.91 * wall / Math.max(deltaNorm, 1e-4)) : 0;
+        ux *= profile; uy *= profile; uz *= profile;
+      }
+    }
+
+    if (S.shape === 'cylinder' && isCylinderAligned && currentRe >= 5 && lx > 0.9) {
+      var xi = lx - 0.9, wakeRadius = 0.9 * (1 + 0.08 * xi / 0.9);
+      var wakeAmplitude = (currentRe < 47 ? 1.15 : 0.72) * Math.exp(-xi / 5.4);
+      var wakeMask = Math.exp(-(ly * ly + lz * lz) / (wakeRadius * wakeRadius));
+      ux -= u0 * wakeAmplitude * wakeMask;
+      if (currentRe >= 47 && S.turbOn && shedFrequency > 0) {
+        var phase = 2 * Math.PI * shedFrequency * t;
+        var wavelength = 0.8 * Math.max(UV, 1e-8) / shedFrequency;
+        var wakeEnvelope = Math.exp(-xi / 3.6) * wakeMask;
+        uy += 0.22 * UV * wakeEnvelope * Math.sin(phase - 2 * Math.PI * xi / wavelength);
+        uz += 0.12 * UV * wakeEnvelope * (lz / wakeRadius) * Math.cos(phase - 2 * Math.PI * xi / wavelength);
+      }
+    }
+
+    vx = r00 * ux + r01 * uy + r02 * uz;
+    vy = r10 * ux + r11 * uy + r12 * uz;
+    vz = r20 * ux + r21 * uy + r22 * uz;
+  }
+
+  function vel(x, y, z, t) {
+    transformVelocityToWorld(x, y, z, t);
   }
 
   /* ---------- speed palette ---------- */
@@ -596,19 +718,20 @@
 
   function refresh() {
     S.dirty = true;
+    wakeDirty = true;
     var t = S.speed / 100;
-    var Uphys = Math.pow(10, -2 + 3 * t);
+    Uphys = S.speed === 0 ? 0 : Math.pow(10, -2 + 3 * t);
     var Dm = S.D / 100;
     var fl = FLUIDS[S.fluid];
-    var Re = Uphys * Dm / fl.nu;
+    // Ratios to the nominal control diameter: sphere diameter, cylinder diameter,
+    // cube width, plate streamwise thickness, streamlined length, blob width, ring outer diameter.
+    var lengthRatio = { sphere: 1, cylinder: 0.9, cube: 0.85, plate: 0.1, teardrop: 1.8, blob: 1.43, ring: 1.25 };
+    charLengthM = Dm * lengthRatio[S.shape];
+    currentRe = Uphys * charLengthM / fl.nu;
 
     sc = 0.3 + (S.D - 2) / 58;
     invS = 1 / sc;
-    delta = 0.3 + 0.45 * sc;
-    UV = 0.7 + 0.9 * t;
-    push = 0.12 * UV;
-    var lg = Math.log(Re) / Math.LN10;
-    turbAmt = S.turbOn ? Math.min(1, Math.max(0, (lg - 3) / 0.78)) : 0;
+    UV = Uphys * 2 * sc / Math.max(Dm, 1e-9);
 
     objGroup.rotation.set(0, S.turn * Math.PI / 180, S.tilt * Math.PI / 180, 'ZYX');
     var e = new THREE.Matrix4().makeRotationFromEuler(objGroup.rotation).elements;
@@ -616,25 +739,112 @@
     r10 = e[1]; r11 = e[5]; r12 = e[9];
     r20 = e[2]; r21 = e[6]; r22 = e[10];
 
+    isCylinderAligned = Math.abs(r10) < 0.05 && Math.abs(r20) < 0.05 && r00 > 0.95;
+    separationTheta = S.shape === 'cylinder' && isCylinderAligned && currentRe >= 40 && currentRe <= 200 ? 120 * Math.PI / 180 : null;
+    var st = currentRe < 47 ? 0 : (currentRe < 300 ? 0.12 + 0.08 * (currentRe - 47) / 253 : 0.2);
+    shedFrequency = st * Uphys / Math.max(charLengthM, 1e-9);
+    var radiusM = charLengthM / 2;
+    var sideSpeed = (S.shape === 'sphere' ? 1.5 : 2) * Uphys;
+    var sideDistanceM = Math.PI * radiusM / 2;
+    var delta99M = sideSpeed > 0 ? 5 * Math.sqrt(fl.nu * sideDistanceM / sideSpeed) : 0;
+    blDeltaNorm = Math.min(0.3, delta99M * 2 / Math.max(Dm, 1e-9));
+    if (glow) {
+      glow.scale.setScalar(1 + blDeltaNorm);
+      glow.visible = S.boundaryLayer && (S.shape === 'sphere' || (S.shape === 'cylinder' && isCylinderAligned));
+    }
+
     $('sizeOut').textContent = S.D + ' cm';
     $('tiltOut').textContent = S.tilt + '°';
     $('turnOut').textContent = S.turn + '°';
     $('speedOut').textContent = fmtU(Uphys) + ' m/s';
     $('nuNote').textContent = 'Kinematic viscosity ν = ' + fl.txt + ' m²/s';
-    $('reNum').textContent = fmtRe(Re);
-    $('formula').textContent = fmtU(Uphys) + ' m/s × ' + Dm.toFixed(2) + ' m ÷ ' + fl.txt + ' m²/s';
+    $('reNum').textContent = fmtRe(currentRe);
+    $('formula').textContent = fmtU(Uphys) + ' m/s × ' + charLengthM.toFixed(3) + ' m ÷ ' + fl.txt + ' m²/s';
 
-    var regime = Re < 1000 ? 'laminar' : (Re < 6000 ? 'transitional' : 'turbulent');
     var chip = $('chip');
+    var regime = S.shape === 'cylinder' && isCylinderAligned
+      ? (currentRe < 1000 ? 'laminar' : (currentRe < 6000 ? 'transitional' : 'turbulent'))
+      : (S.shape === 'sphere' ? 'laminar' : 'transitional');
     chip.setAttribute('data-r', regime);
-    chip.textContent = regime.charAt(0).toUpperCase() + regime.slice(1);
-    var pos = Math.min(100, Math.max(0, (lg + 1) / 8 * 100));
+    var description;
+    if (S.shape === 'cylinder' && isCylinderAligned) {
+      if (currentRe < 5) description = 'Cylinder cross-flow is creeping here; the displayed outer field remains a potential-flow approximation and is not quantitatively valid at low Re.';
+      else if (currentRe < 47) description = 'Cylinder cross-flow: steady separation/recirculation is expected; wake is a reduced-order estimate.';
+      else if (currentRe < 1e5) description = 'Cylinder cross-flow: periodic shedding expected; frequency and wake are estimated, not CFD.';
+      else description = 'Cylinder cross-flow: shedding remains estimated; turbulent-transition physics are not solved.';
+    } else if (S.shape === 'sphere') {
+      description = 'Sphere: inviscid potential-flow field with a laminar boundary-layer profile estimate; separation and wake are not predicted.';
+    } else {
+      description = 'Geometry-specific flow solution unavailable. Streamline deflection is illustrative only; no separation or wake is predicted.';
+    }
+    chip.textContent = S.shape === 'cylinder' && isCylinderAligned
+      ? (currentRe < 5 ? 'Creeping' : (currentRe < 47 ? 'Steady wake' : 'Shedding estimate'))
+      : (S.shape === 'sphere' ? 'Potential model' : 'Illustrative');
+    $('desc').textContent = description;
+    var logRe = Math.log10(Math.max(currentRe, 0.1));
+    var pos = Math.min(100, Math.max(0, (logRe + 1) / 8 * 100));
     $('mark').style.left = pos + '%';
-    var desc;
-    if (regime === 'laminar') desc = 'Smooth layers slide past the object without mixing. Each streamline keeps its own path.';
-    else if (regime === 'transitional') desc = S.turbOn ? 'On the edge. Real flow starts to wobble behind the object.' : 'On the edge. Turbulence is switched off, so the pattern stays smooth.';
-    else desc = S.turbOn ? 'Real flow swirls and mixes behind the object. Watch the wake.' : 'Real flow would be turbulent here. Turbulence is switched off, so you see the smooth idealised pattern.';
-    $('desc').textContent = desc;
+    wakeIsCylinderModel = S.shape === 'cylinder' && isCylinderAligned && currentRe >= 5;
+    var note = '<strong>Model status</strong><br>Re = U L / ν; L = ' + charLengthM.toFixed(3) + ' m. ';
+    if (S.shape === 'sphere') {
+      note += 'Potential velocity field: analytical, inviscid sphere solution. Near-wall profile: numerically integrated Blasius similarity profile; δ₉₉ ≈ ' + (delta99M * 1000).toFixed(2) + ' mm at the side. Wake overlay is a geometry-scaled illustration, not a solved sphere wake.';
+    } else if (S.shape === 'cylinder' && isCylinderAligned) {
+      note += 'Cross-flow outer field: analytical infinite-cylinder potential solution. No-slip layer: local Blasius profile estimate (δ₉₉ ≈ ' + (delta99M * 1000).toFixed(2) + ' mm at the side). Wake: assumed Gaussian deficit (A₀ = ' + (currentRe < 47 ? '1.15' : '0.72') + ', decay scale 5.4 model units ≈ 3 cylinder diameters; 10% threshold), not a solved wake.';
+      if (currentRe >= 47) note += ' Strouhal-based shedding estimate: St ≈ ' + st.toFixed(2) + ', f ≈ ' + shedFrequency.toFixed(2) + ' Hz.';
+      if (currentRe >= 47 && !S.turbOn) note += ' Periodic perturbation hidden by the view control.';
+      if (separationTheta !== null) note += ' Separation angle: empirical estimate, 120° from the upstream stagnation point (Re 40–200 only).';
+    } else {
+      note += 'SDF-based streamline deflection is visualization-only; the wake overlay is a bounding-box-scaled illustration, not a solved velocity deficit. No validated boundary-layer or separation model is available.';
+    }
+    $('modelNote').innerHTML = note;
+    $('tagWake').textContent = wakeIsCylinderModel ? 'Estimated 10% velocity-deficit region' : 'Illustrative geometry-scaled wake';
+    $('stagBtn').disabled = !(S.shape === 'sphere' || (S.shape === 'cylinder' && isCylinderAligned));
+    $('wakeBtn').disabled = Uphys <= 0 || (S.shape === 'cylinder' && isCylinderAligned && currentRe < 5);
+    $('sepBtn').disabled = separationTheta === null;
+    $('blBtn').disabled = !(S.shape === 'sphere' || (S.shape === 'cylinder' && isCylinderAligned));
+    $('turbOn').disabled = !(S.shape === 'cylinder' && isCylinderAligned && currentRe >= 47);
+    function unavailableReason(control, supported, requirement) {
+      control.title = supported ? '' : requirement;
+    }
+    var circularFlowModel = S.shape === 'cylinder' && isCylinderAligned;
+    var alignedBodyModel = S.shape === 'sphere' || circularFlowModel;
+    unavailableReason($('stagBtn'), alignedBodyModel, 'Available for spheres and aligned cylinders.');
+    unavailableReason($('wakeBtn'), !$('wakeBtn').disabled, circularFlowModel && currentRe < 5
+      ? 'Wake estimate requires cylinder Reynolds number Re ≥ 5.'
+      : 'Wake visualization requires nonzero flow speed.');
+    unavailableReason($('sepBtn'), separationTheta !== null, circularFlowModel
+      ? 'Empirical separation estimate is limited to aligned-cylinder Re 40–200.'
+      : 'Separation estimate is available only for an aligned circular cylinder.');
+    unavailableReason($('blBtn'), alignedBodyModel, 'Boundary-layer estimate is available for spheres and aligned cylinders.');
+    unavailableReason($('turbOn'), circularFlowModel && currentRe >= 47, circularFlowModel
+      ? 'Shedding view requires cylinder Reynolds number Re ≥ 47.'
+      : 'Shedding view is available only for an aligned circular cylinder.');
+    var availability = [];
+    if (Uphys <= 0) availability.push('Increase flow speed above zero to show a wake.');
+    else if (!wakeIsCylinderModel) availability.push('Wake is available: for this geometry it is an illustrative, bounding-box-scaled envelope, not a solved velocity deficit.');
+    if (!circularFlowModel) availability.push('Select an aligned cylinder to enable cylinder shedding estimates.');
+    else {
+      if (currentRe < 5) availability.push('Increase Re to 5 to enable the cylinder wake estimate.');
+      if (currentRe < 40 || currentRe > 200) availability.push('Empirical separation marker is limited to Re 40–200.');
+      if (currentRe < 47) availability.push('Increase Re to 47 to enable the shedding view.');
+    }
+    if (!alignedBodyModel) availability.push('Stagnation and boundary-layer overlays are supported only for spheres or aligned cylinders.');
+    $('overlayHelp').textContent = availability.join(' ');
+    if ($('stagBtn').disabled) S.stag = false;
+    if ($('wakeBtn').disabled) S.wake = false;
+    if ($('sepBtn').disabled) S.separation = false;
+    if ($('blBtn').disabled) S.boundaryLayer = false;
+    $('stagBtn').setAttribute('aria-pressed', String(S.stag));
+    $('wakeBtn').setAttribute('aria-pressed', String(S.wake));
+    $('sepBtn').setAttribute('aria-pressed', String(S.separation));
+    $('blBtn').setAttribute('aria-pressed', String(S.boundaryLayer));
+    if (glow) glow.visible = S.boundaryLayer && !$('blBtn').disabled;
+    stagDot.visible = stagHalo.visible = S.stag;
+    wakeMesh.visible = wakeWire.visible = S.wake;
+    sepDots.forEach(function (dot) { dot.visible = S.separation; });
+    if (!S.stag) tagS.style.display = 'none';
+    if (!S.wake) tagW.style.display = 'none';
+    if (!S.separation) tagSep.style.display = 'none';
   }
 
   /* ---------- camera ---------- */
@@ -752,8 +962,7 @@
   function buildCont() {
     S.dirty = false;
     if (contLines) { scene.remove(contLines); contLines.geometry.dispose(); contLines = null; }
-    var ns = Math.floor(N / P), dt = 0.04, verts = [], dist = [], acc = 0, saveTurb = turbAmt, s, i;
-    turbAmt = 0; // dye lines follow the steady, smooth flow
+    var ns = Math.floor(N / P), dt = 0.04, verts = [], dist = [], acc = 0, s, i;
     for (s = 0; s < ns; s++) {
       var x = -L, y = seedY[s * P], z = seedZ[s * P], ox = x, oy = y, oz = z, h = dt * 0.5; acc = 0;
       for (i = 0; i < 700; i++) {
@@ -769,7 +978,6 @@
         if (x > L) { verts.push(ox, oy, oz, L, y, z); dist.push(acc, acc + 0.04); break; }
       }
     }
-    turbAmt = saveTurb;
     var g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
     g.setAttribute('aD', new THREE.Float32BufferAttribute(dist, 1));
@@ -805,7 +1013,7 @@
     nx = Math.max(-L + ex, Math.min(L - ex, nx));
     var rho = Math.sqrt(ny * ny + nz * nz);
     if (rho > rr) { ny *= rr / rho; nz *= rr / rho; }
-    objX = nx; objY = ny; objZ = nz; objGroup.position.set(nx, ny, nz); S.dirty = true;
+    objX = nx; objY = ny; objZ = nz; objGroup.position.set(nx, ny, nz); S.dirty = true; wakeDirty = true;
   };
   $('moveBtn').addEventListener('click', function () {
     controls.moveMode = !controls.moveMode; this.setAttribute('aria-pressed', String(controls.moveMode));
@@ -815,31 +1023,100 @@
   });
 
   /* ---------- stagnation point + wake zone overlays ---------- */
-  var wakeMesh = new THREE.Mesh(new THREE.SphereGeometry(1, 40, 28), new THREE.MeshBasicMaterial({ color: 0xff6b5a, transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending, depthWrite: false }));
+  var wakeGeometry = new THREE.BufferGeometry();
+  var wakeMesh = new THREE.Mesh(wakeGeometry, new THREE.MeshBasicMaterial({ color: 0xff6b5a, transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false }));
   var wakeWire = new THREE.Mesh(wakeMesh.geometry, new THREE.MeshBasicMaterial({ color: 0xffb454, wireframe: true, transparent: true, opacity: 0.35, depthWrite: false }));
   var stagDot = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), new THREE.MeshBasicMaterial({ color: 0xff6b5a }));
   var stagHalo = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), new THREE.MeshBasicMaterial({ color: 0xff6b5a, transparent: true, opacity: 0.25, blending: THREE.AdditiveBlending, depthWrite: false }));
-  [wakeMesh, wakeWire, stagDot, stagHalo].forEach(function (m) { m.visible = false; scene.add(m); });
-  S.wake = false; S.stag = false;
-  var tagW = $('tagWake'), tagS = $('tagStag'), v3 = new THREE.Vector3(), bbox = new THREE.Box3(), stagP = new THREE.Vector3(), wakeEnd = new THREE.Vector3();
+  var sepDots = [0, 1].map(function () { return new THREE.Mesh(new THREE.SphereGeometry(1, 18, 12), new THREE.MeshBasicMaterial({ color: 0xffb454 })); });
+  [wakeMesh, wakeWire, stagDot, stagHalo].concat(sepDots).forEach(function (m) { m.visible = false; scene.add(m); });
+  S.wake = false; S.stag = false; S.separation = false; S.boundaryLayer = false;
+  var tagW = $('tagWake'), tagS = $('tagStag'), tagSep = $('tagSep');
+  var v3 = new THREE.Vector3(), stagP = new THREE.Vector3(), wakeEnd = new THREE.Vector3(), wakeBounds = new THREE.Box3();
+  var wakeX = 33, wakeAround = 24, wakeDirty = true;
+  var wakePositions = new Float32Array((wakeX + 1) * wakeAround * 3), wakeIndices = [];
+  for (var wx = 0; wx < wakeX; wx++) for (var wa = 0; wa < wakeAround; wa++) {
+    var a0 = wx * wakeAround + wa, a1 = wx * wakeAround + (wa + 1) % wakeAround;
+    var b0 = (wx + 1) * wakeAround + wa, b1 = (wx + 1) * wakeAround + (wa + 1) % wakeAround;
+    wakeIndices.push(a0, b0, a1, a1, b0, b1);
+  }
+  wakeGeometry.setAttribute('position', new THREE.BufferAttribute(wakePositions, 3).setUsage(THREE.DynamicDrawUsage));
+  wakeGeometry.setIndex(wakeIndices);
+
+  function worldPoint(lx, ly, lz, target) {
+    return target.set(
+      objX + sc * (r00 * lx + r01 * ly + r02 * lz),
+      objY + sc * (r10 * lx + r11 * ly + r12 * lz),
+      objZ + sc * (r20 * lx + r21 * ly + r22 * lz)
+    );
+  }
   function place(tag, p, fx, dy) {
     v3.copy(p).project(camera);
     tag.style.display = v3.z > 1 ? 'none' : 'block';
     tag.style.transform = 'translate(' + ((v3.x + 1) / 2 * stage.clientWidth + fx * tag.offsetWidth) + 'px,' + ((1 - v3.y) / 2 * stage.clientHeight + dy) + 'px)';
   }
-  // Stagnation point = most upstream point of the surface (the flow hits it head-on and stops).
   function findStag() {
-    var best = 1e9, by = 0, bz = 0, bx = 0, x, y, z;
-    function score(px_, py_, pz_) { return px_ + 0.01 * (py_ * py_ + pz_ * pz_); }
-    for (y = -2.2; y <= 2.2; y += 0.2) for (z = -2.2; z <= 2.2; z += 0.2) {
-      for (x = -L; x < L; x += 0.1) if (sdf(x, y, z) < 0) { if (score(x, y, z) < best) { best = score(x, y, z); bx = x; by = y; bz = z; } break; }
+    if (S.shape === 'sphere') {
+      var mag = Math.sqrt(r00 * r00 + r10 * r10 + r20 * r20) || 1;
+      worldPoint(-r00 / mag * 1.002, -r10 / mag * 1.002, -r20 / mag * 1.002, stagP);
+      return true;
     }
-    if (best > 1e8) return false;
-    var y0 = by, z0 = bz, x0 = bx; best = 1e9;
-    for (y = y0 - 0.2; y <= y0 + 0.2; y += 0.04) for (z = z0 - 0.2; z <= z0 + 0.2; z += 0.04) {
-      for (x = x0 - 0.2; x < x0 + 0.3; x += 0.02) if (sdf(x, y, z) < 0) { if (score(x, y, z) < best) { best = score(x, y, z); bx = x; by = y; bz = z; } break; }
+    if (S.shape === 'cylinder' && isCylinderAligned) {
+      worldPoint(-0.902, 0, 0, stagP);
+      return true;
     }
-    stagP.set(bx, by, bz); return true;
+    return false;
+  }
+  function updateWakeGeometry() {
+    var i, j, xi, radius, angle, index;
+    if (wakeIsCylinderModel) {
+      var amplitude0 = currentRe < 47 ? 1.15 : 0.72;
+      var maxXi = Math.min((L - objX) / sc - 0.9, 5.4 * Math.log(amplitude0 / 0.1));
+      if (maxXi <= 0) { wakeMesh.visible = wakeWire.visible = false; wakeDirty = false; return false; }
+      for (i = 0; i <= wakeX; i++) {
+        xi = maxXi * i / wakeX;
+        var amplitude = amplitude0 * Math.exp(-xi / 5.4);
+        var width = 0.9 * (1 + 0.08 * xi / 0.9);
+        radius = amplitude > 0.1 ? width * Math.sqrt(Math.log(amplitude / 0.1)) : 0;
+        for (j = 0; j < wakeAround; j++) {
+          angle = j / wakeAround * Math.PI * 2;
+          index = (i * wakeAround + j) * 3;
+          worldPoint(0.9 + xi, radius * Math.cos(angle), radius * Math.sin(angle), v3);
+          wakePositions[index] = v3.x; wakePositions[index + 1] = v3.y; wakePositions[index + 2] = v3.z;
+        }
+      }
+      worldPoint(0.9 + maxXi, 0, 0, wakeEnd);
+    } else {
+      body.updateWorldMatrix(true, false);
+      wakeBounds.setFromObject(body);
+      var startX = wakeBounds.max.x + 0.035;
+      var centerY = (wakeBounds.min.y + wakeBounds.max.y) / 2;
+      var centerZ = (wakeBounds.min.z + wakeBounds.max.z) / 2;
+      var bodyRadius = Math.max(0.08, (wakeBounds.max.y - wakeBounds.min.y) / 2, (wakeBounds.max.z - wakeBounds.min.z) / 2);
+      var sizeScale = Math.max(2 * bodyRadius, 2 * sc * charLengthM / Math.max(S.D / 100, 1e-9));
+      var wakeLength = Math.min(3 * sizeScale, L - startX - 0.1);
+      if (wakeLength <= 0) { wakeMesh.visible = wakeWire.visible = false; wakeDirty = false; return false; }
+      var decayLength = Math.max(sizeScale, 1e-6);
+      for (i = 0; i <= wakeX; i++) {
+        xi = wakeLength * i / wakeX;
+        var relativeDeficit = 0.65 * Math.exp(-xi / (2.4 * decayLength));
+        radius = bodyRadius * (0.3 + 0.16 * xi / decayLength) * Math.sqrt(Math.log(relativeDeficit / 0.1));
+        for (j = 0; j < wakeAround; j++) {
+          angle = j / wakeAround * Math.PI * 2;
+          index = (i * wakeAround + j) * 3;
+          wakePositions[index] = startX + xi;
+          wakePositions[index + 1] = centerY + radius * Math.cos(angle);
+          wakePositions[index + 2] = centerZ + radius * Math.sin(angle);
+        }
+      }
+      wakeEnd.set(startX + wakeLength, centerY, centerZ);
+    }
+    wakeGeometry.attributes.position.needsUpdate = true;
+    wakeGeometry.computeVertexNormals();
+    wakeGeometry.computeBoundingSphere();
+    wakeMesh.visible = wakeWire.visible = true;
+    wakeDirty = false;
+    return true;
   }
   function updateOverlays() {
     camera.updateMatrixWorld();
@@ -852,27 +1129,37 @@
       } else tagS.style.display = 'none';
     }
     if (S.wake) {
-      bbox.setFromObject(body);
-      var h = Math.max(bbox.max.y - bbox.min.y, bbox.max.z - bbox.min.z) / 2 + 0.1;
-      var len = Math.max(0.8, Math.min(L - bbox.max.x - 0.2, 2.6 * h + 1));
-      var cy = (bbox.max.y + bbox.min.y) / 2, cz = (bbox.max.z + bbox.min.z) / 2;
-      wakeMesh.position.set(bbox.max.x + len * 0.5 - 0.15, cy, cz);
-      wakeMesh.scale.set(len * 0.5, h * 0.85, h * 0.85);
-      wakeWire.position.copy(wakeMesh.position); wakeWire.scale.copy(wakeMesh.scale);
-      wakeEnd.set(bbox.max.x + len * 0.5, cy + h * 0.85, cz);
-      place(tagW, wakeEnd, -0.5, -34);
+      if (wakeDirty) updateWakeGeometry();
+      if (wakeMesh.visible) {
+        place(tagW, wakeEnd, -0.5, -34);
+      } else tagW.style.display = 'none';
+    }
+    if (S.separation && separationTheta !== null) {
+      var sepX = -0.9 * Math.cos(separationTheta);
+      var sepY = 0.9 * Math.sin(separationTheta);
+      worldPoint(sepX, sepY, 0, sepDots[0].position);
+      worldPoint(sepX, -sepY, 0, sepDots[1].position);
+      sepDots[0].scale.setScalar(0.08); sepDots[1].scale.setScalar(0.08);
+      place(tagSep, sepDots[0].position, -0.5, -30);
     }
   }
   function setOverlay(key, btn) {
     S[key] = !S[key]; btn.setAttribute('aria-pressed', String(S[key]));
-    S.paused = S.wake || S.stag;
-    $('pause').textContent = S.paused ? 'Play' : 'Pause';
     wakeMesh.visible = wakeWire.visible = S.wake; stagDot.visible = stagHalo.visible = S.stag;
+    sepDots.forEach(function (dot) { dot.visible = S.separation; });
+    if (key === 'wake') wakeDirty = true;
     if (!S.wake) tagW.style.display = 'none';
     if (!S.stag) tagS.style.display = 'none';
+    if (!S.separation) tagSep.style.display = 'none';
   }
   $('stagBtn').addEventListener('click', function () { setOverlay('stag', this); });
   $('wakeBtn').addEventListener('click', function () { setOverlay('wake', this); });
+  $('sepBtn').addEventListener('click', function () { setOverlay('separation', this); });
+  $('blBtn').addEventListener('click', function () {
+    S.boundaryLayer = !S.boundaryLayer;
+    this.setAttribute('aria-pressed', String(S.boundaryLayer));
+    refresh();
+  });
 
   /* ---------- run ---------- */
   setShape(S.shape);
@@ -891,7 +1178,7 @@
     var ease = 1 - Math.pow(1 - popT, 3);
     objGroup.scale.setScalar(sc * (0.8 + 0.2 * ease));
     controls.update();
-    if (S.wake || S.stag) updateOverlays();
+    if (S.wake || S.stag || S.separation) updateOverlays();
     renderer.render(scene, camera);
   }
   frame();
